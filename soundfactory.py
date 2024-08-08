@@ -136,14 +136,16 @@ class ComponentSetting:
         pass
     def mouseup(self, pos):
         pass
+    def mousedrag(self, pos):
+        pass
 
 class MultipleChoice(ComponentSetting):
-    def __init__(self, location, options):
+    def __init__(self, name, location, options):
         self.options = options
         self.options_text = None
-        self.default = options[0]
         self.value = options[0]
         self.rect = pg.Rect(*location, 0, 0)
+        self.name = name
     def set_value(self, new_v):
         if new_v in self.options:
             self.value = new_v
@@ -152,7 +154,11 @@ class MultipleChoice(ComponentSetting):
             self.options_text = [font.render(option, True, (255,255,255)) for option in self.options]
             self.rect.w = max([font.size(option)[0] for option in self.options])
             self.rect.h = sum([font.size(option)[1] for option in self.options])
+            if isinstance(self.name, str):
+                self.name = font.render(self.name, True, (255,255,255))
+            self.rect.w = max(self.rect.w, self.name.get_size()[0])
         pg.draw.rect(screen, (50,50,50), self.rect)
+        screen.blit(self.name, (self.rect.x, self.rect.y - self.name.get_size()[1]))
         y = self.rect.y
         for i in range(len(self.options)):
             screen.blit(self.options_text[i], (self.rect.x, y))
@@ -167,6 +173,41 @@ class MultipleChoice(ComponentSetting):
             y += self.options_text[i].get_size()[1]
             
 
+class SliderSetting(ComponentSetting):
+    def __init__(self, name, location, minimum, maximum):
+        self.minimum = minimum
+        self.maximum = maximum
+        self.range = maximum - minimum
+        self.value = (minimum + maximum) / 2
+        self.rect = pg.Rect(*location, 0, 0)
+        self.labels = None
+        self.name = name
+    def draw(self, screen, font):
+        if self.labels == None:
+            self.labels = [font.render(str(round(self.minimum,1)), True, (255,255,255)),
+                           font.render(str(round((self.minimum+self.maximum)/2,1)), True, (255,255,255)),
+                           font.render(str(round(self.maximum,1)), True, (255,255,255))]
+            self.rect.w = max([label.get_size()[0] for label in self.labels]) + 30
+            self.rect.h = 320
+            if isinstance(self.name, str):
+                self.name = font.render(self.name, True, (255,255,255))
+            self.rect.w = max(self.rect.w, self.name.get_size()[0])
+        pg.draw.rect(screen, (50,50,50), self.rect)
+        screen.blit(self.name, (self.rect.x, self.rect.y - self.name.get_size()[1]))
+        pg.draw.rect(screen, (150,150,150), (self.rect.x+10, self.rect.y+10, 10, 300))
+        pg.draw.rect(screen, (230,230,230), (self.rect.x+10, self.rect.y+(300*(1-((self.value-self.minimum)/self.range))), 10, 20))
+        pg.draw.line(screen, (0,0,0),
+                     (self.rect.x+10, self.rect.y+10+(300*(1-((self.value-self.minimum)/self.range)))),
+                     (self.rect.x+20, self.rect.y+10+(300*(1-((self.value-self.minimum)/self.range)))))
+        screen.blit(self.labels[2], (self.rect.x+30, self.rect.y))
+        screen.blit(self.labels[1], (self.rect.x+30, self.rect.y+150))
+        screen.blit(self.labels[0], (self.rect.x+30, self.rect.y+300))
+    def mousedrag(self, pos):
+        self.set_value(((1-((pos[1]-self.rect.y)/self.rect.h))*self.range) + self.minimum)
+    def set_value(self, new_v):
+        self.value = max(self.minimum, min(self.maximum, new_v))
+
+
 class Conveyor(FactoryComponent):
     name = 'conveyor belt'
     sprite = Sprites.conveyor
@@ -180,13 +221,20 @@ class Oscillator(FactoryComponent):
     name = 'oscillator'
     sprite = Sprites.sine_generator
     characteristic_colour = (0,0,255)
-    settings = {'waveform': MultipleChoice((10,50), ['sine', 'square', 'sawtooth', 'triangle']),
-                'frequency': MultipleChoice((100, 50), ['A', 'A#', 'B', 'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#'])}
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.settings = {'waveform': MultipleChoice('waveform', (10,50), ['sine', 'square', 'sawtooth', 'triangle']),
+                         'frequency': MultipleChoice('note', (120, 50), ['A', 'A#', 'B', 'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#']),
+                         'detune': SliderSetting('detune', (180,50), -20, 20)}
     def operate(self):
         if self.location not in self.factory.soundchunks:
             generator = {'sine': gensound.Sine, 'square': gensound.Square,
                          'sawtooth': gensound.Sawtooth, 'triangle': gensound.Triangle}[self.settings['waveform'].get_value()]
-            self.factory.create_soundchunk(generator(frequency=self.settings['frequency'].get_value(), duration=1e3 * self.factory.chunk_length), self.location)
+            self.factory.create_soundchunk(generator(frequency={'A':440, 'A#':466.2, 'B':493.9, 'C':523.3,
+                                                                'C#':554.4, 'D':587.3, 'D#':622.3, 'E':659.3,
+                                                                'F':698.5,'F#':740, 'G':784, 'G#':830.6}[self.settings['frequency'].get_value()] +
+                                                     self.settings['detune'].get_value(), duration=1e3 * self.factory.chunk_length),
+                                           self.location)
             self.stamp_colour(self.factory.soundchunks[self.location])
         self.factory.soundchunks[self.location].velocity = self.direction
     def settings_changed(self):
@@ -195,23 +243,43 @@ class Oscillator(FactoryComponent):
                                                    'sawtooth': (Sprites.sawtooth_generator, (255,0,0)),
                                                    'triangle': (Sprites.triangle_generator, (255,255,0))}[self.settings['waveform'].get_value()]
 
-class SineGenerator(FactoryComponent):
-    sprite = Sprites.sine_generator
-    characteristic_colour = (0,0,255)
-    def operate(self):
-        if self.location not in self.factory.soundchunks:
-            self.factory.create_soundchunk(gensound.Sine(frequency=440, duration=1e3 * self.factory.chunk_length), self.location)
-            self.stamp_colour(self.factory.soundchunks[self.location])
-        self.factory.soundchunks[self.location].velocity = self.direction
 
 
 class ADSR(FactoryComponent):
     name = 'ADSR envelope'
     sprite = Sprites.adsr
     characteristic_colour = (255,0,255)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.settings = {'attack': SliderSetting('attack time', (10,50), 0, 1),
+                         'decay': SliderSetting('decay time', (150,50), 0, 1),
+                         'sustain': SliderSetting('sustain level', (270,50), 0, 1),
+                         'release': SliderSetting('release time', (420,50), 0, 1)}
+        self.settings['attack'].set_value(0.2)
+        self.settings['decay'].set_value(0.2)
+        self.settings['sustain'].set_value(0.75)
+        self.settings['release'].set_value(0.2)
     def operate(self):
         if self.location in self.factory.soundchunks:
-            self.factory.soundchunks[self.location].signal *= gensound.transforms.ADSR(attack = 0.2e3  * self.factory.chunk_length, decay = 0.2e3  * self.factory.chunk_length, sustain = 0.75, release = 0.2e3  * self.factory.chunk_length)
+            atk = math.floor(self.settings['attack'].get_value() * self.factory.chunk_length * 44100)
+            dec = math.floor(self.settings['decay'].get_value() * self.factory.chunk_length * 44100)
+            sus = self.settings['sustain'].get_value()
+            rel = math.floor(self.settings['release'].get_value() * self.factory.chunk_length * 44100)
+            chunk_length = math.floor((self.factory.soundchunks[self.location].signal.duration/1000) * 44100)
+            if atk + dec + rel >= chunk_length:
+                difference = (atk + dec + rel - chunk_length) + 3 # three sample safety margin cus we can't have 0-length sections apparently
+                if difference < rel:
+                    rel -= difference
+                else:
+                    difference -= rel
+                    rel = 1
+                    if difference < dec:
+                        dec -= difference
+                    else:
+                        difference -= dec
+                        dec = 1
+                        atk -= difference
+            self.factory.soundchunks[self.location].signal *= gensound.transforms.ADSR(attack = atk, decay = dec, sustain = sus, release = rel)
             self.factory.soundchunks[self.location].velocity = self.direction
             self.stamp_colour(self.factory.soundchunks[self.location])
 
@@ -356,7 +424,11 @@ class FactoryUI:
     def pos_to_square(self, pos):
         return ((pos[0]//self.factory.viewscale) + self.factory.viewlocation[0], (pos[1]//self.factory.viewscale) + self.factory.viewlocation[1])
     def mousedrag(self, pos):
-        pass
+        if isinstance(self.current_view, FactoryComponent):
+            for setting in self.current_view.settings.values():
+                if setting.rect.collidepoint(pos):
+                    setting.mousedrag(pos)
+                    break
     def leftbuttondown(self, pos):
         if isinstance(self.current_view, FactoryComponent):
             for setting in self.current_view.settings.values():
