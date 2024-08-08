@@ -9,6 +9,9 @@ class Sprites:
     sawtooth_generator = pg.image.load('include/sawtoothgen.png')
     triangle_generator = pg.image.load('include/trianglegen.png')
     square_generator = pg.image.load('include/squaregen.png')
+    noise_generator = pg.image.load('include/noisegen.png')
+    silence_generator = pg.image.load('include/silencegen.png')
+    combine = pg.image.load('include/combine.png')
     destroy = pg.image.load('include/destroy.png')
     output = pg.image.load('include/output.png')
     adsr = pg.image.load('include/adsr.png')
@@ -223,25 +226,31 @@ class Oscillator(FactoryComponent):
     characteristic_colour = (0,0,255)
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.settings = {'waveform': MultipleChoice('waveform', (10,50), ['sine', 'square', 'sawtooth', 'triangle']),
+        self.settings = {'waveform': MultipleChoice('waveform', (10,50), ['sine', 'square', 'sawtooth', 'triangle', 'noise', 'silence']),
                          'frequency': MultipleChoice('note', (120, 50), ['A', 'A#', 'B', 'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#']),
                          'detune': SliderSetting('detune', (180,50), -20, 20)}
     def operate(self):
         if self.location not in self.factory.soundchunks:
             generator = {'sine': gensound.Sine, 'square': gensound.Square,
-                         'sawtooth': gensound.Sawtooth, 'triangle': gensound.Triangle}[self.settings['waveform'].get_value()]
-            self.factory.create_soundchunk(generator(frequency={'A':440, 'A#':466.2, 'B':493.9, 'C':523.3,
-                                                                'C#':554.4, 'D':587.3, 'D#':622.3, 'E':659.3,
-                                                                'F':698.5,'F#':740, 'G':784, 'G#':830.6}[self.settings['frequency'].get_value()] +
-                                                     self.settings['detune'].get_value(), duration=1e3 * self.factory.chunk_length),
-                                           self.location)
+                         'sawtooth': gensound.Sawtooth, 'triangle': gensound.Triangle,
+                         'noise': gensound.WhiteNoise, 'silence': gensound.Silence}[self.settings['waveform'].get_value()]
+            if self.settings['waveform'].get_value() in ['noise', 'silence']: #  these ones choke on 'frequency' input
+                self.factory.create_soundchunk(generator(duration=1e3 * self.factory.chunk_length), self.location)
+            else:
+                self.factory.create_soundchunk(generator(frequency={'A':440, 'A#':466.2, 'B':493.9, 'C':523.3,
+                                                                    'C#':554.4, 'D':587.3, 'D#':622.3, 'E':659.3,
+                                                                    'F':698.5,'F#':740, 'G':784, 'G#':830.6}[self.settings['frequency'].get_value()] +
+                                                         self.settings['detune'].get_value(), duration=1e3 * self.factory.chunk_length),
+                                               self.location)
             self.stamp_colour(self.factory.soundchunks[self.location])
         self.factory.soundchunks[self.location].velocity = self.direction
     def settings_changed(self):
         self.sprite, self.characteristic_colour = {'sine': (Sprites.sine_generator, (0,0,255)),
                                                    'square': (Sprites.square_generator, (0,255,0)),
                                                    'sawtooth': (Sprites.sawtooth_generator, (255,0,0)),
-                                                   'triangle': (Sprites.triangle_generator, (255,255,0))}[self.settings['waveform'].get_value()]
+                                                   'triangle': (Sprites.triangle_generator, (255,255,0)),
+                                                   'noise': (Sprites.noise_generator, (180,180,180)),
+                                                   'silence': (Sprites.silence_generator, (0,0,0))}[self.settings['waveform'].get_value()]
 
 
 
@@ -282,6 +291,24 @@ class ADSR(FactoryComponent):
             self.factory.soundchunks[self.location].signal *= gensound.transforms.ADSR(attack = atk, decay = dec, sustain = sus, release = rel)
             self.factory.soundchunks[self.location].velocity = self.direction
             self.stamp_colour(self.factory.soundchunks[self.location])
+
+class Combine(FactoryComponent):
+    name = 'combine'
+    sprite = Sprites.combine
+    stored_chunk = None
+    def operate(self):
+        if self.location in self.factory.soundchunks:
+            if self.stored_chunk is not None:
+                self.characteristic_colour = self.factory.soundchunks[self.location].colour
+                self.factory.create_soundchunk(self.stored_chunk.signal + self.factory.soundchunks[self.location].signal,
+                                               self.location)
+                self.factory.soundchunks[self.location].colour = self.stored_chunk.colour
+                self.stamp_colour(self.factory.soundchunks[self.location])
+                self.factory.soundchunks[self.location].velocity = self.direction
+                self.stored_chunk = None
+            else:
+                self.stored_chunk = self.factory.soundchunks.pop(self.location)
+        
 
 class Output(FactoryComponent):
     name = 'output'
@@ -477,7 +504,7 @@ def run():
     clock = pg.time.Clock()
     delta_t_ms = 0
     factory = FactoryFloor()
-    ui = FactoryUI(factory, [Oscillator, Conveyor, Output, Destroyer, ADSR, SplitPath, Delay, Squisher, Stretcher])
+    ui = FactoryUI(factory, [Oscillator, Conveyor, Output, Destroyer, ADSR, SplitPath, Delay, Squisher, Stretcher, Combine])
     while True:
         for event in pg.event.get():
             if event.type == pg.QUIT:
