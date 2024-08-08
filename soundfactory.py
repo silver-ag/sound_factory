@@ -274,7 +274,10 @@ class ADSR(FactoryComponent):
             dec = math.floor(self.settings['decay'].get_value() * self.factory.chunk_length * 44100)
             sus = self.settings['sustain'].get_value()
             rel = math.floor(self.settings['release'].get_value() * self.factory.chunk_length * 44100)
-            chunk_length = math.floor((self.factory.soundchunks[self.location].signal.duration/1000) * 44100)
+            if isinstance(self.factory.soundchunks[self.location].signal, gensound.signals.Mix):
+                chunk_length = math.floor((self.factory.soundchunks[self.location].signal.signals[0].duration/1000) * 44100)
+            else:
+                chunk_length = math.floor((self.factory.soundchunks[self.location].signal.duration/1000) * 44100)
             if atk + dec + rel >= chunk_length:
                 difference = (atk + dec + rel - chunk_length) + 3 # three sample safety margin cus we can't have 0-length sections apparently
                 if difference < rel:
