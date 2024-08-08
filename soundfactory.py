@@ -52,6 +52,7 @@ class FactoryFloor:
         self.chunk_length = 1 # length in seconds of a chunk
         self.viewscale = 50
         self.viewlocation = (0,0)
+        self.outputs_this_step = []
     def create_component(self, kind, location, direction):
         self.components[location] = kind(self, location, direction)
     def create_soundchunk(self, signal, location):
@@ -86,6 +87,13 @@ class FactoryFloor:
             soundchunk.move()
         for soundchunk in self.soundchunks.values():
             soundchunk.moved_this_tick = False
+        if len(self.outputs_this_step) > 0:
+            final_output = self.outputs_this_step[0]
+            if len(self.outputs_this_step) > 1:
+                for output in self.outputs_this_step[1:]:
+                    final_output += output
+            final_output.play()
+            self.outputs_this_step = []
     def move_soundchunk(self, location, direction):
         if location in self.soundchunks:
             chunk = self.soundchunks.pop(location)
@@ -322,7 +330,7 @@ class Output(FactoryComponent):
     def operate(self):
         if self.location in self.factory.soundchunks:
             chunk = self.factory.soundchunks.pop(self.location)
-            chunk.signal.play()
+            self.factory.outputs_this_step.append(chunk.signal)
 
 class Destroyer(FactoryComponent):
     name = 'destroyer'
