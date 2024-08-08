@@ -51,7 +51,7 @@ class FactoryFloor:
         self.soundchunks = {}
         self.chunk_length = 1 # length in seconds of a chunk
         self.viewscale = 50
-        self.viewlocation = (0,0)
+        self.viewlocation = [0,0]
         self.outputs_this_step = []
     def create_component(self, kind, location, direction):
         self.components[location] = kind(self, location, direction)
@@ -59,25 +59,21 @@ class FactoryFloor:
         self.soundchunks[location] = SoundChunk(self, location, signal)
     def floorlocation_to_screenlocation(self, position):
         return ((position[0]-self.viewlocation[0])*self.viewscale, (position[1]-self.viewlocation[1])*self.viewscale)
-    def draw(self, screen, scale, topleft):
+    def draw(self, screen):
         w,h = screen.get_size()
         pg.draw.rect(screen, (200,200,200), (0,0,w,h))
-        for x in range(math.ceil(w/scale)):
-            for y in range(math.ceil(h/scale)):
-                x += topleft[0]
-                y += topleft[1]
+        for x in range(math.ceil(w/self.viewscale)):
+            for y in range(math.ceil(h/self.viewscale)):
                 if (x,y) in self.components and self.components[(x,y)].opentop:
                     self.components[(x,y)].draw(screen)
-        for x in range(math.ceil(w/scale)):
-            for y in range(math.ceil(h/scale)):
-                x += topleft[0]
-                y += topleft[1]
+        for x in range(math.ceil(w/self.viewscale)):
+            for y in range(math.ceil(h/self.viewscale)):
+                x += self.viewlocation[0]
+                y += self.viewlocation[1]
                 if (x,y) in self.soundchunks:
                     self.soundchunks[(x,y)].draw(screen)
-        for x in range(math.ceil(w/scale)):
-            for y in range(math.ceil(h/scale)):
-                x += topleft[0]
-                y += topleft[1]
+        for x in range(math.ceil(w/self.viewscale)):
+            for y in range(math.ceil(h/self.viewscale)):
                 if (x,y) in self.components and not self.components[(x,y)].opentop:
                     self.components[(x,y)].draw(screen)
     def step(self):
@@ -135,6 +131,8 @@ class FactoryComponent:
             screen.blit(pg.transform.scale(pg.transform.rotate(self.sprite, 270), (self.factory.viewscale, self.factory.viewscale)), location)
         elif self.direction == Compass.WEST:
             screen.blit(pg.transform.scale(pg.transform.rotate(self.sprite, 90), (self.factory.viewscale, self.factory.viewscale)), location)
+        else:
+            print(f'WARNING: factorycomponent with improper direction ({self.direction})')
 
 class SettingWidget:
     rect = pg.Rect(0,0,0,0)
@@ -449,7 +447,7 @@ class FactoryUI:
             for i in range(len(self.component_menu)):
                 screen.blit(pg.transform.scale(self.component_menu[i].sprite, (40,40)), (((i%(w//50))*50)+5,((i//(w//50))*50)+5))
         elif self.current_view == 'factory':
-            self.factory.draw(screen, self.factory.viewscale, self.factory.viewlocation)
+            self.factory.draw(screen)
             pg.draw.rect(screen, (10,10,10), (5,5,50,50))
             pg.draw.rect(screen, (10,10,10), (60,5,50,50))
             if self.currentcomponent is not None:
@@ -510,6 +508,16 @@ class FactoryUI:
         position = self.pos_to_square(pos)
         if position in self.factory.components:
             self.factory.remove_component(position)
+    def keyup(self, keyevent):
+        if self.current_view == 'factory':
+            if keyevent.key == pg.K_UP:
+                self.factory.viewlocation[1] -= 1
+            elif keyevent.key == pg.K_DOWN:
+                self.factory.viewlocation[1] += 1
+            elif keyevent.key == pg.K_LEFT:
+                self.factory.viewlocation[0] -= 1
+            elif keyevent.key == pg.K_RIGHT:
+                self.factory.viewlocation[0] += 1
 
 def run():
     pg.init()
@@ -535,6 +543,8 @@ def run():
                     ui.rightbuttondown(event.pos)
             elif event.type == pg.MOUSEMOTION and event.buttons[0] == 1:
                 ui.mousedrag(event.pos)
+            elif event.type == pg.KEYUP:
+                ui.keyup(event)
         delta_t_ms += clock.tick(30)
         if delta_t_ms >= 1000 * factory.chunk_length:
             factory.step()
