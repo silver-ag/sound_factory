@@ -59,23 +59,29 @@ class FactoryFloor:
         self.soundchunks[location] = SoundChunk(self, location, signal)
     def floorlocation_to_screenlocation(self, position):
         return ((position[0]-self.viewlocation[0])*self.viewscale, (position[1]-self.viewlocation[1])*self.viewscale)
+    def screenlocation_to_floorlocation(self, position):
+        return ((position[0]//self.viewscale) + self.viewlocation[0], (position[1]//self.viewscale) + self.viewlocation[1])
     def draw(self, screen):
         w,h = screen.get_size()
         pg.draw.rect(screen, (200,200,200), (0,0,w,h))
         for x in range(math.ceil(w/self.viewscale)):
             for y in range(math.ceil(h/self.viewscale)):
-                if (x,y) in self.components and self.components[(x,y)].opentop:
-                    self.components[(x,y)].draw(screen)
+                x_off = x + self.viewlocation[0]
+                y_off = y + self.viewlocation[1]
+                if (x_off,y_off) in self.components and self.components[(x_off,y_off)].opentop:
+                    self.components[(x_off,y_off)].draw(screen)
         for x in range(math.ceil(w/self.viewscale)):
             for y in range(math.ceil(h/self.viewscale)):
-                x += self.viewlocation[0]
-                y += self.viewlocation[1]
-                if (x,y) in self.soundchunks:
-                    self.soundchunks[(x,y)].draw(screen)
+                x_off = x + self.viewlocation[0]
+                y_off = y + self.viewlocation[1]
+                if (x_off,y_off) in self.soundchunks:
+                    self.soundchunks[(x_off,y_off)].draw(screen)
         for x in range(math.ceil(w/self.viewscale)):
             for y in range(math.ceil(h/self.viewscale)):
-                if (x,y) in self.components and not self.components[(x,y)].opentop:
-                    self.components[(x,y)].draw(screen)
+                x_off = x + self.viewlocation[0]
+                y_off = y + self.viewlocation[1]
+                if (x_off,y_off) in self.components and not self.components[(x_off,y_off)].opentop:
+                    self.components[(x_off,y_off)].draw(screen)
     def step(self):
         for component in self.components.values():
             component.operate()
@@ -459,8 +465,6 @@ class FactoryUI:
             pg.draw.rect(screen, (255,0,0), (self.screen_width - 50, 0, 50, 50))
             for setting in self.current_view.settings.values():
                 setting.draw(screen, self.font)
-    def pos_to_square(self, pos):
-        return ((pos[0]//self.factory.viewscale) + self.factory.viewlocation[0], (pos[1]//self.factory.viewscale) + self.factory.viewlocation[1])
     def mousedrag(self, pos):
         if isinstance(self.current_view, FactoryComponent):
             for setting in self.current_view.settings.values():
@@ -484,7 +488,7 @@ class FactoryUI:
             if pg.Rect(60,5,50,50).collidepoint(pos):
                 self.current_view = 'component menu'
                 return True
-            position = self.pos_to_square(pos)
+            position = self.factory.screenlocation_to_floorlocation(pos)
             if position in self.factory.components:
                 if pg.key.get_mods() & pg.KMOD_SHIFT:
                     self.current_view = self.factory.components[position]
@@ -518,6 +522,12 @@ class FactoryUI:
                 self.factory.viewlocation[0] -= 1
             elif keyevent.key == pg.K_RIGHT:
                 self.factory.viewlocation[0] += 1
+            elif keyevent.key == pg.K_MINUS:
+                if self.factory.viewscale > 10:
+                    self.factory.viewscale -= 10
+            elif keyevent.key == pg.K_EQUALS:
+                self.factory.viewscale += 10
+            
 
 def run():
     pg.init()
