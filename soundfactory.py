@@ -136,7 +136,7 @@ class FactoryComponent:
         elif self.direction == Compass.WEST:
             screen.blit(pg.transform.scale(pg.transform.rotate(self.sprite, 90), (self.factory.viewscale, self.factory.viewscale)), location)
 
-class ComponentSetting:
+class SettingWidget:
     rect = pg.Rect(0,0,0,0)
     default = 0
     def get_value(self):
@@ -150,7 +150,7 @@ class ComponentSetting:
     def mousedrag(self, pos):
         pass
 
-class MultipleChoice(ComponentSetting):
+class MultipleChoiceSetting(SettingWidget):
     def __init__(self, name, location, options):
         self.options = options
         self.options_text = None
@@ -184,7 +184,7 @@ class MultipleChoice(ComponentSetting):
             y += self.options_text[i].get_size()[1]
             
 
-class SliderSetting(ComponentSetting):
+class SliderSetting(SettingWidget):
     def __init__(self, name, location, minimum, maximum):
         self.minimum = minimum
         self.maximum = maximum
@@ -234,8 +234,8 @@ class Oscillator(FactoryComponent):
     characteristic_colour = (0,0,255)
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.settings = {'waveform': MultipleChoice('waveform', (10,50), ['sine', 'square', 'sawtooth', 'triangle', 'noise', 'silence']),
-                         'frequency': MultipleChoice('note', (120, 50), ['A', 'A#', 'B', 'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#']),
+        self.settings = {'waveform': MultipleChoiceSetting('waveform', (10,50), ['sine', 'square', 'sawtooth', 'triangle', 'noise', 'silence']),
+                         'frequency': MultipleChoiceSetting('note', (120, 50), ['A', 'A#', 'B', 'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#']),
                          'detune': SliderSetting('detune', (180,50), -20, 20)}
     def operate(self):
         if self.location not in self.factory.soundchunks:
@@ -427,8 +427,10 @@ class SoundChunk:
         moving_location = ((self.location[0]*progress) + (self.previous_location[0]*(1-progress)),
                            (self.location[1]*progress) + (self.previous_location[1]*(1-progress)))
         draw_location = self.factory.floorlocation_to_screenlocation(moving_location)
-        pg.draw.rect(screen, self.colour, (draw_location[0]+(self.factory.viewscale//10), draw_location[1]+(self.factory.viewscale//10),
-                                           int(self.factory.viewscale*0.8), int(self.factory.viewscale*0.8)))
+        chunk_sfc = pg.Surface((int(self.factory.viewscale*0.8), int(self.factory.viewscale*0.8)))
+        chunk_sfc.set_alpha(128)
+        chunk_sfc.fill(self.colour)
+        screen.blit(chunk_sfc, ((draw_location[0]+(self.factory.viewscale//10), draw_location[1]+(self.factory.viewscale//10))))
 
 
 class FactoryUI:
