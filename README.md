@@ -10,6 +10,7 @@ blocks of sound that you can then move around on conveyors, pass through various
 - click on a component to rotate it
 - right click on a component to destroy it
 - <kbd>shift</kbd> click on a component to edit its settings
+- use the settings menu to load/save
 
 note that components (except those that consume their input and produce no output) have a direction in which they send blocks (indicated by
 an arrow), but don't care which direction they receive them from. in the case where several different blocks are directed onto one space

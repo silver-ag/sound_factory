@@ -8,6 +8,7 @@ import pickle
 
 class Sprites:
     font = None
+    unknown = pg.image.load('include/unknown.png')
     component_sprites = {
             'conveyor': pg.image.load('include/conveyor.png'),
             'sine_generator': pg.image.load('include/sinegen.png'),
@@ -24,13 +25,22 @@ class Sprites:
             'splitpath': pg.image.load('include/splitpath.png'),
             'squish': pg.image.load('include/squish.png'),
             'stretch': pg.image.load('include/stretch.png')}
+    icon_sprites = {
+        'settings': pg.image.load('include/settings.png'),
+        'pause': pg.image.load('include/pause.png'),
+        'play': pg.image.load('include/play.png')}
     text_sprites = {} # place to put text sprites because we can't pickle surfaces
     def get_sprite(kind, name):
         if kind == 'component':
             if name in Sprites.component_sprites:
                 return Sprites.component_sprites[name]
             else:
-                return Sprites.component_sprites['unknown']
+                return Sprites.unknown
+        elif kind == 'icon':
+            if name in Sprites.icon_sprites:
+                return Sprites.icon_sprites[name]
+            else:
+                return Sprites.unknown
         elif kind == 'text':
             if name not in Sprites.text_sprites:
                 Sprites.text_sprites[name] = Sprites.font.render(name, True, (255,255,255))
@@ -139,6 +149,7 @@ class FactoryComponent:
     opengates = True
     characteristic_colour = (255,255,255)
     settings = {}
+    info = '[no information given]'
     def __init__(self, factory, location, direction):
         self.factory = factory
         self.location = location
@@ -246,6 +257,7 @@ class Conveyor(FactoryComponent):
     name = 'conveyor belt'
     sprite_name = 'conveyor'
     opentop = True
+    info = 'moves any block on it in the direction it faces.'
     def operate(self):
         if self.location in self.factory.soundchunks:
             self.factory.soundchunks[self.location].velocity = self.direction
@@ -254,6 +266,7 @@ class Conveyor(FactoryComponent):
 class Oscillator(FactoryComponent):
     name = 'oscillator'
     sprite_name = 'sine_generator'
+    info = 'an oscillator generates a block of a plain tone whenever no other block is passing through it. different waveforms create different sounds.'
     characteristic_colour = (0,0,255)
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -288,6 +301,7 @@ class Oscillator(FactoryComponent):
 class ADSR(FactoryComponent):
     name = 'ADSR envelope'
     sprite_name = 'adsr'
+    info = 'applies an ADSR (attack, decay, sustain, release) envelope to each block that passes through it. attack is the time it takes to fade in to maximum volume, decay is the time it takes to fade out to the sustain level where it holds for a while, then release is the time it takes to fade out entirely. attack, decay and release are given as a proportion of the total time of the block, if they total more than 1 then the end of the envelope will be truncated'
     characteristic_colour = (255,0,255)
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -329,6 +343,7 @@ class ADSR(FactoryComponent):
 class Combine(FactoryComponent):
     name = 'combine'
     sprite_name = 'combine'
+    info = 'mixes two blocks, by taking in one and storing it, then taking in the next and producing an average of the two'
     stored_chunk = None
     def operate(self):
         if self.location in self.factory.soundchunks:
@@ -347,6 +362,7 @@ class Combine(FactoryComponent):
 class Output(FactoryComponent):
     name = 'output'
     sprite_name = 'output'
+    info = 'plays the sound of the blocks that enter it, consuming them in the process.'
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.direction = Compass.NORTH
@@ -358,6 +374,7 @@ class Output(FactoryComponent):
 class Destroyer(FactoryComponent):
     name = 'destroyer'
     sprite_name = 'destroy'
+    info = 'consumes blocks that enter it without playing them. used to get rid of unwanted blocks so they don\'t clog up the system.'
     def operate(self):
         if self.location in self.factory.soundchunks:
             self.factory.soundchunks.pop(self.location)
@@ -366,6 +383,7 @@ class Squisher(FactoryComponent):
     name = 'squisher'
     sprite_name = 'squish'
     stored_chunk = None
+    info = 'takes two blocks in, one at a time, then produces a block consisting of the two concatenated then doubled in speed so the result remains the same length as the inputs.'
     def operate(self):
         if self.location in self.factory.soundchunks:
             if self.stored_chunk is not None:
@@ -382,6 +400,7 @@ class Squisher(FactoryComponent):
 class Stretcher(FactoryComponent):
     name = 'stretcher'
     sprite_name = 'stretch'
+    info = 'takes a block and produces two blocks in a row that are the first and second half of the input block, halved in speed so that each is the length of the input block.'
     stored_chunk = None
     characteristic_colour = (255,255,255)
     def operate(self):
@@ -402,6 +421,7 @@ class Stretcher(FactoryComponent):
 class Delay(FactoryComponent):
     name = 'delay'
     sprite_name = 'delay'
+    info = 'takes a block, waits one step, then releases it. produces an output stream with gaps in.'
     def operate(self):
         if not self.opengates:
             self.opengates = True
@@ -412,6 +432,7 @@ class Delay(FactoryComponent):
 class SplitPath(FactoryComponent):
     name = 'split path'
     sprite_name = 'splitpath'
+    info = 'alternates between sending its input blocks left or right.'
     tick = True
     def operate(self):
         if self.location in self.factory.soundchunks:
@@ -466,6 +487,7 @@ class FactoryUI:
         self.font = pg.font.Font(size=30)
         self.save_button_rect = None
         self.load_button_rect = None
+        self.playing = True
         Sprites.font = self.font
     def draw(self, screen):
         w,h = screen.get_size()
@@ -476,19 +498,23 @@ class FactoryUI:
                 screen.blit(pg.transform.scale(Sprites.get_sprite('component', self.component_menu[i].sprite_name), (40,40)), (((i%(w//50))*50)+5,((i//(w//50))*50)+5))
         elif self.current_view == 'factory':
             self.factory.draw(screen)
-            pg.draw.rect(screen, (10,10,10), (5,5,50,50))
+            screen.blit(pg.transform.scale(Sprites.get_sprite('icon', 'settings'), (50,50)), (5,5))
+            if self.playing:
+                screen.blit(pg.transform.scale(Sprites.get_sprite('icon', 'pause'), (50,50)), (5,60))
+            else:
+                screen.blit(pg.transform.scale(Sprites.get_sprite('icon', 'play'), (50,50)), (5,60))
             pg.draw.rect(screen, (10,10,10), (60,5,50,50))
             if self.currentcomponent is not None:
                 screen.blit(pg.transform.scale(Sprites.get_sprite('component', self.currentcomponent.sprite_name), (40,40)), (65,10))
         elif self.current_view == 'settings':
             screen.fill((10,10,10))
-            title = self.font.render('factory settings', True, (255,255,255))
+            title = Sprites.get_sprite('text', 'factory settings')
             screen.blit(title, (0,0))
-            savetxt = self.font.render('save', True, (255,255,255))
+            savetxt = Sprites.get_sprite('text', 'save')
             self.save_button_rect = pg.Rect(150, 50, *savetxt.get_size())
             pg.draw.rect(screen, (50,50,50), self.save_button_rect)
             screen.blit(savetxt, (150, 50))
-            loadtxt = self.font.render('load', True, (255,255,255))
+            loadtxt = Sprites.get_sprite('text', 'load')
             self.load_button_rect = pg.Rect(150, 100, *loadtxt.get_size())
             pg.draw.rect(screen, (50,50,50), self.load_button_rect)
             screen.blit(loadtxt, (150, 100))
@@ -497,8 +523,11 @@ class FactoryUI:
                 setting.draw(screen, self.font)
         elif isinstance(self.current_view, FactoryComponent):
             screen.fill((10,10,10))
-            title = self.font.render(self.current_view.name, True, (255,255,255))
+            title = Sprites.get_sprite('text', self.current_view.name)
             screen.blit(title, (0,0))
+            info = Sprites.get_sprite('text', 'info')
+            pg.draw.rect(screen, (50,50,50), (title.get_size()[0] + 20, 0, *info.get_size()))
+            screen.blit(info, (title.get_size()[0]+20, 0))
             pg.draw.rect(screen, (255,0,0), (self.screen_width - 50, 0, 50, 50))
             for setting in self.current_view.settings.values():
                 setting.draw(screen, self.font)
@@ -529,6 +558,9 @@ class FactoryUI:
             elif pg.Rect(5,5,50,50).collidepoint(pos):
                 self.current_view = 'settings'
                 return True
+            elif pg.Rect(5,60,50,50).collidepoint(pos):
+                self.playing = not self.playing
+                return True
             position = self.factory.screenlocation_to_floorlocation(pos)
             if position in self.factory.components:
                 if pg.key.get_mods() & pg.KMOD_SHIFT:
@@ -555,6 +587,8 @@ class FactoryUI:
             if pg.Rect(self.screen_width- 50, 0, 50, 50).collidepoint(pos):
                 self.current_view.settings_changed()
                 self.current_view = 'factory'
+            elif pg.Rect(Sprites.get_sprite('text', self.current_view.name).get_size()[0] + 20, 0, *Sprites.get_sprite('text', 'info').get_size()).collidepoint(pos):
+                self.show_info(self.current_view)
             else:
                 for setting in self.current_view.settings.values():
                     if setting.rect.collidepoint(pos):
@@ -581,6 +615,11 @@ class FactoryUI:
                     self.factory.viewscale -= 10
             elif keyevent.key == pg.K_EQUALS:
                 self.factory.viewscale += 10
+    def show_info(self, component):
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showinfo(title=component.name, message=component.info)
+        root.destroy()
     def load(self):
         root = tk.Tk()
         root.withdraw()
@@ -631,7 +670,8 @@ def run():
                 ui.mousedrag(event.pos)
             elif event.type == pg.KEYUP:
                 ui.keyup(event)
-        delta_t_ms += clock.tick(30)
+        if ui.playing:
+            delta_t_ms += clock.tick(30)
         if delta_t_ms >= 1000 * ui.factory.chunk_length:
             ui.factory.step()
             delta_t_ms -= 1000 * ui.factory.chunk_length
