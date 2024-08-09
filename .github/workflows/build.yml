@@ -27,7 +27,7 @@ jobs:
         uses: Nuitka/Nuitka-Action@main
         with:
           nuitka-version: main
-          script-name: soundfactory
+          script-name: soundfactory.py
           onefile: true
 
       - name: Upload Artifacts
