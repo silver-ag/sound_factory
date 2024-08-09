@@ -2,23 +2,43 @@ import math
 import gensound
 from gensound.effects import Stretch
 import pygame as pg
+import tkinter as tk
+from tkinter import filedialog, messagebox
+import pickle
 
 class Sprites:
-    conveyor = pg.image.load('include/conveyor.png')
-    sine_generator = pg.image.load('include/sinegen.png')
-    sawtooth_generator = pg.image.load('include/sawtoothgen.png')
-    triangle_generator = pg.image.load('include/trianglegen.png')
-    square_generator = pg.image.load('include/squaregen.png')
-    noise_generator = pg.image.load('include/noisegen.png')
-    silence_generator = pg.image.load('include/silencegen.png')
-    combine = pg.image.load('include/combine.png')
-    destroy = pg.image.load('include/destroy.png')
-    output = pg.image.load('include/output.png')
-    adsr = pg.image.load('include/adsr.png')
-    delay = pg.image.load('include/delay.png')
-    splitpath = pg.image.load('include/splitpath.png')
-    squish = pg.image.load('include/squish.png')
-    stretch = pg.image.load('include/stretch.png')
+    font = None
+    component_sprites = {
+            'conveyor': pg.image.load('include/conveyor.png'),
+            'sine_generator': pg.image.load('include/sinegen.png'),
+            'sawtooth_generator': pg.image.load('include/sawtoothgen.png'),
+            'triangle_generator': pg.image.load('include/trianglegen.png'),
+            'square_generator': pg.image.load('include/squaregen.png'),
+            'noise_generator': pg.image.load('include/noisegen.png'),
+            'silence_generator': pg.image.load('include/silencegen.png'),
+            'combine': pg.image.load('include/combine.png'),
+            'destroy': pg.image.load('include/destroy.png'),
+            'output': pg.image.load('include/output.png'),
+            'adsr': pg.image.load('include/adsr.png'),
+            'delay': pg.image.load('include/delay.png'),
+            'splitpath': pg.image.load('include/splitpath.png'),
+            'squish': pg.image.load('include/squish.png'),
+            'stretch': pg.image.load('include/stretch.png')}
+    text_sprites = {} # place to put text sprites because we can't pickle surfaces
+    def get_sprite(kind, name):
+        if kind == 'component':
+            if name in Sprites.component_sprites:
+                return Sprites.component_sprites[name]
+            else:
+                return Sprites.component_sprites['unknown']
+        elif kind == 'text':
+            if name not in Sprites.text_sprites:
+                Sprites.text_sprites[name] = Sprites.font.render(name, True, (255,255,255))
+            return Sprites.text_sprites[name]
+        else:
+            raise Exception(f'unknown kind of sprite: {kind}')
+    
+    
 
 class Compass:
     NORTH = (0,-1)
@@ -53,6 +73,8 @@ class FactoryFloor:
         self.viewscale = 50
         self.viewlocation = [0,0]
         self.outputs_this_step = []
+        self.settings = {'bpm': SliderSetting('bpm', (10,50), 0, 200)}
+        self.settings['bpm'].set_value(60)
     def create_component(self, kind, location, direction):
         self.components[location] = kind(self, location, direction)
     def create_soundchunk(self, signal, location):
@@ -107,6 +129,8 @@ class FactoryFloor:
             self.components.pop(location)
         if location in self.soundchunks:
             self.soundchunks.pop(location)
+    def settings_changed(self):
+        self.chunk_length = 60/self.settings['bpm'].get_value()
 
 
 class FactoryComponent:
@@ -129,14 +153,15 @@ class FactoryComponent:
         pass
     def draw(self, screen):
         location = self.factory.floorlocation_to_screenlocation(self.location)
+        sprite = Sprites.get_sprite('component', self.sprite_name)
         if self.direction == Compass.NORTH:
-            screen.blit(pg.transform.scale(self.sprite, (self.factory.viewscale, self.factory.viewscale)), location)
+            screen.blit(pg.transform.scale(sprite, (self.factory.viewscale, self.factory.viewscale)), location)
         elif self.direction == Compass.SOUTH:
-            screen.blit(pg.transform.scale(pg.transform.rotate(self.sprite, 180), (self.factory.viewscale, self.factory.viewscale)), location)
+            screen.blit(pg.transform.scale(pg.transform.rotate(sprite, 180), (self.factory.viewscale, self.factory.viewscale)), location)
         elif self.direction == Compass.EAST:
-            screen.blit(pg.transform.scale(pg.transform.rotate(self.sprite, 270), (self.factory.viewscale, self.factory.viewscale)), location)
+            screen.blit(pg.transform.scale(pg.transform.rotate(sprite, 270), (self.factory.viewscale, self.factory.viewscale)), location)
         elif self.direction == Compass.WEST:
-            screen.blit(pg.transform.scale(pg.transform.rotate(self.sprite, 90), (self.factory.viewscale, self.factory.viewscale)), location)
+            screen.blit(pg.transform.scale(pg.transform.rotate(sprite, 90), (self.factory.viewscale, self.factory.viewscale)), location)
         else:
             print(f'WARNING: factorycomponent with improper direction ({self.direction})')
 
@@ -157,7 +182,6 @@ class SettingWidget:
 class MultipleChoiceSetting(SettingWidget):
     def __init__(self, name, location, options):
         self.options = options
-        self.options_text = None
         self.value = options[0]
         self.rect = pg.Rect(*location, 0, 0)
         self.name = name
@@ -165,27 +189,24 @@ class MultipleChoiceSetting(SettingWidget):
         if new_v in self.options:
             self.value = new_v
     def draw(self, screen, font):
-        if self.options_text is None:
-            self.options_text = [font.render(option, True, (255,255,255)) for option in self.options]
-            self.rect.w = max([font.size(option)[0] for option in self.options])
-            self.rect.h = sum([font.size(option)[1] for option in self.options])
-            if isinstance(self.name, str):
-                self.name = font.render(self.name, True, (255,255,255))
-            self.rect.w = max(self.rect.w, self.name.get_size()[0])
+        if self.rect.w == 0:
+            self.rect.w = max([Sprites.get_sprite('text', option).get_size()[0] for option in self.options])
+            self.rect.h = sum([Sprites.get_sprite('text', option).get_size()[1] for option in self.options])
+            self.rect.w = max(self.rect.w, Sprites.get_sprite('text', self.name).get_size()[0])
         pg.draw.rect(screen, (50,50,50), self.rect)
-        screen.blit(self.name, (self.rect.x, self.rect.y - self.name.get_size()[1]))
+        screen.blit(Sprites.get_sprite('text', self.name), (self.rect.x, self.rect.y - Sprites.get_sprite('text', self.name).get_size()[1]))
         y = self.rect.y
         for i in range(len(self.options)):
-            screen.blit(self.options_text[i], (self.rect.x, y))
+            screen.blit(Sprites.get_sprite('text', self.options[i]), (self.rect.x, y))
             if self.value == self.options[i]:
-                pg.draw.rect(screen, (255,255,255), (self.rect.x, y, self.rect.w, self.options_text[i].get_size()[1]), width=3)
-            y += self.options_text[i].get_size()[1]
+                pg.draw.rect(screen, (255,255,255), (self.rect.x, y, self.rect.w, Sprites.get_sprite('text', self.options[i]).get_size()[1]), width=3)
+            y += Sprites.get_sprite('text', self.options[i]).get_size()[1]
     def mouseup(self, pos):
         y = self.rect.y
         for i in range(len(self.options)):
-            if pos[1] >= y and pos[1] < y + self.options_text[i].get_size()[1]:
+            if pos[1] >= y and pos[1] < y + Sprites.get_sprite('text', self.options[i]).get_size()[1]:
                 self.set_value(self.options[i])
-            y += self.options_text[i].get_size()[1]
+            y += Sprites.get_sprite('text', self.options[i]).get_size()[1]
             
 
 class SliderSetting(SettingWidget):
@@ -199,24 +220,22 @@ class SliderSetting(SettingWidget):
         self.name = name
     def draw(self, screen, font):
         if self.labels == None:
-            self.labels = [font.render(str(round(self.minimum,1)), True, (255,255,255)),
-                           font.render(str(round((self.minimum+self.maximum)/2,1)), True, (255,255,255)),
-                           font.render(str(round(self.maximum,1)), True, (255,255,255))]
-            self.rect.w = max([label.get_size()[0] for label in self.labels]) + 30
+            self.labels = [str(round(self.minimum,1)),
+                           str(round((self.minimum+self.maximum)/2,1)),
+                           str(round(self.maximum,1))]
+            self.rect.w = max([Sprites.get_sprite('text', label).get_size()[0] for label in self.labels]) + 30
             self.rect.h = 320
-            if isinstance(self.name, str):
-                self.name = font.render(self.name, True, (255,255,255))
-            self.rect.w = max(self.rect.w, self.name.get_size()[0])
+            self.rect.w = max(self.rect.w, Sprites.get_sprite('text', self.name).get_size()[0])
         pg.draw.rect(screen, (50,50,50), self.rect)
-        screen.blit(self.name, (self.rect.x, self.rect.y - self.name.get_size()[1]))
+        screen.blit(Sprites.get_sprite('text', self.name), (self.rect.x, self.rect.y - Sprites.get_sprite('text', self.name).get_size()[1]))
         pg.draw.rect(screen, (150,150,150), (self.rect.x+10, self.rect.y+10, 10, 300))
         pg.draw.rect(screen, (230,230,230), (self.rect.x+10, self.rect.y+(300*(1-((self.value-self.minimum)/self.range))), 10, 20))
         pg.draw.line(screen, (0,0,0),
                      (self.rect.x+10, self.rect.y+10+(300*(1-((self.value-self.minimum)/self.range)))),
                      (self.rect.x+20, self.rect.y+10+(300*(1-((self.value-self.minimum)/self.range)))))
-        screen.blit(self.labels[2], (self.rect.x+30, self.rect.y))
-        screen.blit(self.labels[1], (self.rect.x+30, self.rect.y+150))
-        screen.blit(self.labels[0], (self.rect.x+30, self.rect.y+300))
+        screen.blit(Sprites.get_sprite('text', self.labels[2]), (self.rect.x+30, self.rect.y))
+        screen.blit(Sprites.get_sprite('text', self.labels[1]), (self.rect.x+30, self.rect.y+150))
+        screen.blit(Sprites.get_sprite('text', self.labels[0]), (self.rect.x+30, self.rect.y+300))
     def mousedrag(self, pos):
         self.set_value(((1-((pos[1]-self.rect.y)/self.rect.h))*self.range) + self.minimum)
     def set_value(self, new_v):
@@ -225,7 +244,7 @@ class SliderSetting(SettingWidget):
 
 class Conveyor(FactoryComponent):
     name = 'conveyor belt'
-    sprite = Sprites.conveyor
+    sprite_name = 'conveyor'
     opentop = True
     def operate(self):
         if self.location in self.factory.soundchunks:
@@ -234,7 +253,7 @@ class Conveyor(FactoryComponent):
 
 class Oscillator(FactoryComponent):
     name = 'oscillator'
-    sprite = Sprites.sine_generator
+    sprite_name = 'sine_generator'
     characteristic_colour = (0,0,255)
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -257,18 +276,18 @@ class Oscillator(FactoryComponent):
             self.stamp_colour(self.factory.soundchunks[self.location])
         self.factory.soundchunks[self.location].velocity = self.direction
     def settings_changed(self):
-        self.sprite, self.characteristic_colour = {'sine': (Sprites.sine_generator, (0,0,255)),
-                                                   'square': (Sprites.square_generator, (0,255,0)),
-                                                   'sawtooth': (Sprites.sawtooth_generator, (255,0,0)),
-                                                   'triangle': (Sprites.triangle_generator, (255,255,0)),
-                                                   'noise': (Sprites.noise_generator, (180,180,180)),
-                                                   'silence': (Sprites.silence_generator, (0,0,0))}[self.settings['waveform'].get_value()]
+        self.sprite_name, self.characteristic_colour = {'sine': ('sine_generator', (0,0,255)),
+                                                        'square': ('square_generator', (0,255,0)),
+                                                        'sawtooth': ('sawtooth_generator', (255,0,0)),
+                                                        'triangle': ('triangle_generator', (255,255,0)),
+                                                        'noise': ('noise_generator', (180,180,180)),
+                                                        'silence': ('silence_generator', (0,0,0))}[self.settings['waveform'].get_value()]
 
 
 
 class ADSR(FactoryComponent):
     name = 'ADSR envelope'
-    sprite = Sprites.adsr
+    sprite_name = 'adsr'
     characteristic_colour = (255,0,255)
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -309,7 +328,7 @@ class ADSR(FactoryComponent):
 
 class Combine(FactoryComponent):
     name = 'combine'
-    sprite = Sprites.combine
+    sprite_name = 'combine'
     stored_chunk = None
     def operate(self):
         if self.location in self.factory.soundchunks:
@@ -327,7 +346,7 @@ class Combine(FactoryComponent):
 
 class Output(FactoryComponent):
     name = 'output'
-    sprite = Sprites.output
+    sprite_name = 'output'
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.direction = Compass.NORTH
@@ -338,14 +357,14 @@ class Output(FactoryComponent):
 
 class Destroyer(FactoryComponent):
     name = 'destroyer'
-    sprite = Sprites.destroy
+    sprite_name = 'destroy'
     def operate(self):
         if self.location in self.factory.soundchunks:
             self.factory.soundchunks.pop(self.location)
 
 class Squisher(FactoryComponent):
     name = 'squisher'
-    sprite = Sprites.squish
+    sprite_name = 'squish'
     stored_chunk = None
     def operate(self):
         if self.location in self.factory.soundchunks:
@@ -362,7 +381,7 @@ class Squisher(FactoryComponent):
 
 class Stretcher(FactoryComponent):
     name = 'stretcher'
-    sprite = Sprites.stretch
+    sprite_name = 'stretch'
     stored_chunk = None
     characteristic_colour = (255,255,255)
     def operate(self):
@@ -382,7 +401,7 @@ class Stretcher(FactoryComponent):
 
 class Delay(FactoryComponent):
     name = 'delay'
-    sprite = Sprites.delay
+    sprite_name = 'delay'
     def operate(self):
         if not self.opengates:
             self.opengates = True
@@ -392,7 +411,7 @@ class Delay(FactoryComponent):
 
 class SplitPath(FactoryComponent):
     name = 'split path'
-    sprite = Sprites.splitpath
+    sprite_name = 'splitpath'
     tick = True
     def operate(self):
         if self.location in self.factory.soundchunks:
@@ -441,23 +460,41 @@ class FactoryUI:
     def __init__(self, factory, component_menu):
         self.factory = factory
         self.currentcomponent = Conveyor
-        self.current_view = 'factory' # or 'component menu' or a specific component's settings
+        self.current_view = 'factory' # or 'settings' or 'component menu' or a specific component's settings
         self.component_menu = component_menu
         self.screen_width = 1
         self.font = pg.font.Font(size=30)
+        self.save_button_rect = None
+        self.load_button_rect = None
+        Sprites.font = self.font
     def draw(self, screen):
         w,h = screen.get_size()
         self.screen_width = w
         if self.current_view == 'component menu':
             screen.fill((10,10,10))
             for i in range(len(self.component_menu)):
-                screen.blit(pg.transform.scale(self.component_menu[i].sprite, (40,40)), (((i%(w//50))*50)+5,((i//(w//50))*50)+5))
+                screen.blit(pg.transform.scale(Sprites.get_sprite('component', self.component_menu[i].sprite_name), (40,40)), (((i%(w//50))*50)+5,((i//(w//50))*50)+5))
         elif self.current_view == 'factory':
             self.factory.draw(screen)
             pg.draw.rect(screen, (10,10,10), (5,5,50,50))
             pg.draw.rect(screen, (10,10,10), (60,5,50,50))
             if self.currentcomponent is not None:
-                screen.blit(pg.transform.scale(self.currentcomponent.sprite, (40,40)), (65,10))
+                screen.blit(pg.transform.scale(Sprites.get_sprite('component', self.currentcomponent.sprite_name), (40,40)), (65,10))
+        elif self.current_view == 'settings':
+            screen.fill((10,10,10))
+            title = self.font.render('factory settings', True, (255,255,255))
+            screen.blit(title, (0,0))
+            savetxt = self.font.render('save', True, (255,255,255))
+            self.save_button_rect = pg.Rect(150, 50, *savetxt.get_size())
+            pg.draw.rect(screen, (50,50,50), self.save_button_rect)
+            screen.blit(savetxt, (150, 50))
+            loadtxt = self.font.render('load', True, (255,255,255))
+            self.load_button_rect = pg.Rect(150, 100, *loadtxt.get_size())
+            pg.draw.rect(screen, (50,50,50), self.load_button_rect)
+            screen.blit(loadtxt, (150, 100))
+            pg.draw.rect(screen, (255,0,0), (self.screen_width - 50, 0, 50, 50))
+            for setting in self.factory.settings.values():
+                setting.draw(screen, self.font)
         elif isinstance(self.current_view, FactoryComponent):
             screen.fill((10,10,10))
             title = self.font.render(self.current_view.name, True, (255,255,255))
@@ -471,12 +508,13 @@ class FactoryUI:
                 if setting.rect.collidepoint(pos):
                     setting.mousedrag(pos)
                     break
-    def leftbuttondown(self, pos):
-        if isinstance(self.current_view, FactoryComponent):
-            for setting in self.current_view.settings.values():
+        elif self.current_view == 'settings':
+            for setting in self.factory.settings.values():
                 if setting.rect.collidepoint(pos):
-                    setting.mousedown(pos)
+                    setting.mousedrag(pos)
                     break
+    def leftbuttondown(self, pos):
+        pass
     def leftbuttonup(self, pos):
         if self.current_view == 'component menu':
             square_clicked = ((pos[0]//50), (pos[1]//50))
@@ -488,6 +526,9 @@ class FactoryUI:
             if pg.Rect(60,5,50,50).collidepoint(pos):
                 self.current_view = 'component menu'
                 return True
+            elif pg.Rect(5,5,50,50).collidepoint(pos):
+                self.current_view = 'settings'
+                return True
             position = self.factory.screenlocation_to_floorlocation(pos)
             if position in self.factory.components:
                 if pg.key.get_mods() & pg.KMOD_SHIFT:
@@ -497,6 +538,19 @@ class FactoryUI:
             else:
                 if self.currentcomponent is not None:
                     self.factory.create_component(self.currentcomponent, position, Compass.NORTH)
+        elif self.current_view == 'settings':
+            if pg.Rect(self.screen_width- 50, 0, 50, 50).collidepoint(pos):
+                self.factory.settings_changed()
+                self.current_view = 'factory'
+            elif self.save_button_rect.collidepoint(pos):
+                self.save()
+            elif self.load_button_rect.collidepoint(pos):
+                self.load()
+            else:
+                for setting in self.factory.settings.values():
+                    if setting.rect.collidepoint(pos):
+                        setting.mouseup(pos)
+                        break
         elif isinstance(self.current_view, FactoryComponent):
             if pg.Rect(self.screen_width- 50, 0, 50, 50).collidepoint(pos):
                 self.current_view.settings_changed()
@@ -509,7 +563,7 @@ class FactoryUI:
     def rightbuttondown(self, pos):
         pass
     def rightbuttonup(self, pos):
-        position = self.pos_to_square(pos)
+        position = self.factory.screenlocation_to_floorlocation(pos)
         if position in self.factory.components:
             self.factory.remove_component(position)
     def keyup(self, keyevent):
@@ -527,6 +581,29 @@ class FactoryUI:
                     self.factory.viewscale -= 10
             elif keyevent.key == pg.K_EQUALS:
                 self.factory.viewscale += 10
+    def load(self):
+        root = tk.Tk()
+        root.withdraw()
+        file = filedialog.askopenfile(mode='rb')
+        if file is None:
+            messagebox.showwarning('could not open file', 'an error occured while trying to open the file, do you have the right permissions?')
+        else:
+            try:
+                self.factory = pickle.load(file)
+            except Exception as e:
+                messagebox.showwarning(f'could not load file', 'an error occured while trying to load save data from the file: {e}')
+        root.destroy()
+        self.current_view = 'factory'
+    def save(self):
+        root = tk.Tk()
+        root.withdraw()
+        file = filedialog.asksaveasfile(confirmoverwrite=True, mode='wb')
+        if file is None:
+             messagebox.showwarning('could not open file', 'an error occured while trying to create/open the file, do you have the right permissions for that folder?')
+        else:
+            pickle.dump(self.factory, file)
+        root.destroy()
+        self.current_view = 'factory'
             
 
 def run():
@@ -534,8 +611,7 @@ def run():
     screen = pg.display.set_mode((1000,600))
     clock = pg.time.Clock()
     delta_t_ms = 0
-    factory = FactoryFloor()
-    ui = FactoryUI(factory, [Oscillator, Conveyor, Output, Destroyer, ADSR, SplitPath, Delay, Squisher, Stretcher, Combine])
+    ui = FactoryUI(FactoryFloor(), [Oscillator, Conveyor, Output, Destroyer, ADSR, SplitPath, Delay, Squisher, Stretcher, Combine])
     while True:
         for event in pg.event.get():
             if event.type == pg.QUIT:
@@ -556,9 +632,9 @@ def run():
             elif event.type == pg.KEYUP:
                 ui.keyup(event)
         delta_t_ms += clock.tick(30)
-        if delta_t_ms >= 1000 * factory.chunk_length:
-            factory.step()
-            delta_t_ms -= 1000 * factory.chunk_length
+        if delta_t_ms >= 1000 * ui.factory.chunk_length:
+            ui.factory.step()
+            delta_t_ms -= 1000 * ui.factory.chunk_length
         ui.draw(screen)
 
         pg.display.flip()
